@@ -19,26 +19,29 @@ let port, reader, writer;
    HANDLE DATA ARDUINO
 =============================== */
 function handleArduinoData(line) {
-  // Pisahkan dan trim tiap bagian
   const parts = line.split("|").map(p => p.trim());
   if (parts.length < 5) return;
 
-  const lux = parseFloat(parts[0].split(":")[1]);       // Lux sensor
-  const waktu = parts[1].split(":")[1].trim();          // Waktu dari Arduino
-  const esi = parseFloat(parts[2].split(":")[1]);       // ESI angka
-  const sensorStatus = parts[3].split(":")[1].trim();   // Status sensor cahaya
-  const jarak = parts[4].split(":")[1].trim();          // Estimasi jarak
+  const lux = parseFloat(parts[0].split(":")[1]);
+  const waktu = parts[1].split(":")[1].replace("mnt", "").trim();
+  const esi = parseFloat(parts[2].split(":")[1]);
+  const jarak = parts[4].split(":")[1].trim();
 
-  // ===== Update HTML =====
+  // ===== UPDATE ANGKA =====
   document.getElementById("luxValue").textContent = lux.toFixed(1);
-  document.getElementById("esiValue").textContent = waktu;            // waktu
-  document.getElementById("esiNumber").textContent = esi.toFixed(2);  // angka ESI
-  updateEsiIndicator(esi);                                            // string indikator ESI
-  document.getElementById("distanceInfo").textContent = "Estimasi jarak: " + jarak;
+  document.getElementById("esiValue").textContent = waktu;       // waktu simulasi
+  document.getElementById("esiNumber").textContent = esi.toFixed(2);
 
-  // Update charts, bar chart ikut kategori ESI
-  const esiCategory = getEsiCategory(esi);
-  updateCharts(lux, esiCategory);
+  // ===== UPDATE STATUS STRING =====
+  updateEsiIndicator(esi);
+
+  // ===== JARAK =====
+  document.getElementById("distanceInfo").textContent =
+    "Estimasi jarak: " + jarak;
+
+  // ===== CHART =====
+  const category = getEsiCategory(esi);
+  updateCharts(lux, category);
 }
 
 /* ===============================
@@ -252,3 +255,18 @@ async function readSerialLoop(){
     lines.forEach(line=>{if(line) handleArduinoData(line.trim());});
   }
 }
+
+const ws = new WebSocket("ws://localhost:8765");
+
+ws.onmessage = (event) => {
+    const d = JSON.parse(event.data);
+
+    document.getElementById("luxValue").innerText = d.lux;
+    document.getElementById("esiNumber").innerText = d.esi.toFixed(2);
+    document.getElementById("esiIndicator").innerText = d.status;
+    document.getElementById("distanceInfo").innerText =
+        "Estimasi jarak: " + d.jarak;
+
+    const s = document.getElementById("esiIndicator");
+    s.className = "esi-status " + d.status.replace(" ", "-").toLowerCase();
+};
