@@ -256,17 +256,83 @@ async function readSerialLoop(){
   }
 }
 
-const ws = new WebSocket("ws://localhost:8765");
+/* ===============================
+   KONFIGURASI MODEL ONNX
+=============================== */
+let session;
 
-ws.onmessage = (event) => {
-    const d = JSON.parse(event.data);
+// GANTI ANGKA DI BAWAH INI DENGAN HASIL DARI PYTHON
+const SCALER_MEANS = [/* Masukkan 5 angka Mean di sini */];
+const SCALER_SCALES = [/* Masukkan 5 angka Scale di sini */];
 
-    document.getElementById("luxValue").innerText = d.lux;
-    document.getElementById("esiNumber").innerText = d.esi.toFixed(2);
-    document.getElementById("esiIndicator").innerText = d.status;
-    document.getElementById("distanceInfo").innerText =
-        "Estimasi jarak: " + d.jarak;
+// Load model saat halaman dibuka
+async function initModel() {
+    try {
+        console.log("Memuat model ONNX...");
+        // Pastikan file model_esi.onnx sudah di-upload ke GitHub
+        session = await ort.InferenceSession.create('model_esi.onnx');
+        console.log("Model ESI berhasil dimuat!");
+    } catch (e) {
+        console.error("Gagal memuat model:", e);
+    }
+}
+initModel();
 
-    const s = document.getElementById("esiIndicator");
-    s.className = "esi-status " + d.status.replace(" ", "-").toLowerCase();
-};
+/* ===============================
+   LOGIKA PREDIKSI ML
+=============================== */
+async function getMLPrediction(lux, waktu) {
+    if (!session) return 0;
+
+    // 1. Feature Engineering (Harus sama dengan train_model.py)
+    const lux_time = lux * waktu;
+    const log_lux = Math.log(lux + 1);
+    const lux_squared = Math.pow(lux, 2);
+
+    const rawFeatures = [lux, waktu, lux_time, log_lux, lux_squared];
+
+    // 2. Scaling Manual (StandardScaler)
+    const scaledFeatures = rawFeatures.map((val, i) => (val - SCALER_MEANS[i]) / SCALER_SCALES[i]);
+
+    // 3. Jalankan Inferensi ONNX
+    try {
+        const inputTensor = new ort.Tensor('float32', new Float32Array(scaledFeatures), [1, 5]);
+        const feeds = { float_input: inputTensor };
+        const results = await session.run(feeds);
+        
+        // Ambil output (tergantung nama output di model ONNX, biasanya 'variable')
+        const output = results[Object.keys(results)[0]]; 
+        return output.data[0];
+    } catch (e) {
+        console.error("Prediksi gagal:", e);
+        return 0;
+    }
+}
+
+/* ===============================
+   HANDLE DATA ARDUINO (UPDATE)
+=============================== */
+async function handleArduinoData(line) {
+  const parts = line.split("|").map(p => p.trim());
+  if (parts.length < 2) return;
+
+  // Ambil data mentah
+  const lux = parseFloat(parts[0].split(":")[1]) || 0;
+  const waktuStr = parts[1].split(":")[1].replace("mnt", "").trim();
+  const waktu = parseFloat(waktuStr) || 0;
+  const jarak = parts[4] ? parts[4].split(":")[1].trim() : "-";
+
+  // PREDIKSI MENGGUNAKAN ONNX
+  const esi = await getMLPrediction(lux, waktu);
+
+  // UPDATE UI
+  document.getElementById("luxValue").textContent = lux.toFixed(1);
+  document.getElementById("esiValue").textContent = waktu; 
+  document.getElementById("esiNumber").textContent = esi.toFixed(2);
+
+  updateEsiIndicator(esi);
+  document.getElementById("distanceInfo").textContent = "Estimasi jarak: " + jarak;
+  
+  const category = getEsiCategory(esi);
+  updateCharts(lux, category);
+}
