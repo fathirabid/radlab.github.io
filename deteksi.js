@@ -34,7 +34,7 @@ window.onload = () => {
 async function initModel() {
     try {
         console.log("🧠 Memuat model ONNX...");
-        session = await ort.InferenceSession.create('model_esi.onnx');
+        session = await ort.InferenceSession.create('C:\Users\HP\OneDrive\Documents\GitHub\RADLAB\model_esi.onnx');
         console.log("✅ Model ESI berhasil dimuat!");
     } catch (e) {
         console.error("❌ Gagal memuat model:", e);
